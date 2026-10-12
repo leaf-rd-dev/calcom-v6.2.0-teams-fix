@@ -1,0 +1,37 @@
+diff --git a/apps/api/v2/src/modules/teams/teams/services/teams.service.ts b/apps/api/v2/src/modules/teams/teams/services/teams.service.ts
+index 383e89a..5ff0b2e 100644
+--- a/apps/api/v2/src/modules/teams/teams/services/teams.service.ts
++++ b/apps/api/v2/src/modules/teams/teams/services/teams.service.ts
+@@ -1,3 +1,4 @@
++import { OAuthClientRepository } from "@/modules/oauth-clients/oauth-client.repository";
+ import { StripeService } from "@/modules/stripe/stripe.service";
+ import { TeamsMembershipsRepository } from "@/modules/teams/memberships/teams-memberships.repository";
+ import { CreateTeamInput } from "@/modules/teams/teams/inputs/create-team.input";
+@@ -16,7 +17,8 @@ export class TeamsService {
+     private readonly teamsRepository: TeamsRepository,
+     private readonly teamsMembershipsRepository: TeamsMembershipsRepository,
+     private readonly stripeService: StripeService,
+-    private readonly configService: ConfigService
++    private readonly configService: ConfigService,
++    private readonly oAuthClientRepository: OAuthClientRepository
+   ) {}
+
+   async createTeam(input: CreateTeamInput, ownerId: number) {
+@@ -35,6 +37,17 @@ export class TeamsService {
+       });
+     }
+
++    // EMA PATCH: record which OAuth client created this team. Upstream never
++    // set this for flat (non-org) teams, which made every subsequent attempt
++    // to add a second platform-managed user to the team fail with
++    // PLATFORM_USER_BEING_ADDED_TO_REGULAR_TEAM_ERROR (see
++    // TeamsMembershipsService.canUserBeAddedToTeam, which relies on this
++    // field via oAuthClientRepository.getByTeamId). See AGPL source notice.
++    const oauthClient = await this.oAuthClientRepository.getByUserId(ownerId);
++    if (oauthClient) {
++      (teamData as typeof teamData & { createdByOAuthClientId?: string }).createdByOAuthClientId = oauthClient.id;
++    }
++
+     if (!this.isTeamBillingEnabled) {
+       const team = await this.teamsRepository.create(teamData);
+       await this.teamsMembershipsRepository.createTeamMembership(team.id, {
